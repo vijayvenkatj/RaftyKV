@@ -20,6 +20,7 @@ type WAL struct {
 }
 
 func NewWAL(filePath string) (*WAL, error) {
+
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
@@ -70,9 +71,6 @@ func (wal *WAL) Restore() ([]*LogEntry, error) {
 		return nil, nil
 	}
 
-	stat, _ := wal.file.Stat()
-	fmt.Println("WAL size:", stat.Size())
-
 	if _, err := wal.file.Seek(0, 0); err != nil {
 		return nil, err
 	}
@@ -98,9 +96,6 @@ func (wal *WAL) Restore() ([]*LogEntry, error) {
 
 		body := make([]byte, totalBody)
 
-		fmt.Println("Header:", header)
-		fmt.Println("Lengths:", opLen, keyLen, valLen)
-
 		_, err = io.ReadFull(wal.file, body)
 		if err != nil {
 			fmt.Println("Read Error:", err)
@@ -115,8 +110,6 @@ func (wal *WAL) Restore() ([]*LogEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		fmt.Print(entry)
 
 		entries = append(entries, entry)
 	}

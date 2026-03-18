@@ -4,33 +4,66 @@ import (
 	"fmt"
 
 	"github.com/vijayvenkatj/kv-store/internal/server/store"
+	"github.com/vijayvenkatj/kv-store/internal/server/wal"
 )
 
 func main() {
 
 	storeInstance := store.New()
 
-	//ops := []*wal.LogEntry{{
-	//	Operation: "put",
-	//	Key:       "key1",
-	//	Value:     "value1",
-	//},
-	//	{
-	//		Operation: "put",
-	//		Key:       "key2",
-	//		Value:     "value2",
-	//	}}
-	//
-	//for _, op := range ops {
-	//	err := storeInstance.Apply(op)
-	//	if err != nil {
-	//		fmt.Println(err)
-	//	}
-	//}
+	for {
+		var operation string
+		fmt.Scan(&operation)
 
-	storeInstance.Restore()
+		if operation == "put" {
+			var key, value string
+			fmt.Scan(&key, &value)
 
-	fmt.Println(storeInstance.Get("key1"))
+			entry := &wal.LogEntry{
+				Operation: operation,
+				Key:       key,
+				Value:     value,
+			}
+			err := storeInstance.Apply(entry)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
+
+		if operation == "delete" {
+			var key string
+			fmt.Scan(&key)
+
+			entry := &wal.LogEntry{
+				Operation: operation,
+				Key:       key,
+				Value:     "",
+			}
+			err := storeInstance.Apply(entry)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
+
+		if operation == "get" {
+			var key string
+			fmt.Scan(&key)
+			fmt.Println(storeInstance.Get(key))
+		}
+
+		if operation == "stop" {
+			break
+		}
+
+		if operation == "restore" {
+			err := storeInstance.Restore()
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
 
 	return
 }
