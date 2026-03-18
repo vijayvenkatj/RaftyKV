@@ -2,31 +2,31 @@ package wal
 
 import "encoding/binary"
 
-func encode(data *LogEntry) []byte {
+func encode(e *LogEntry) []byte {
+	op := []byte(e.Operation)
+	key := []byte(e.Key)
+	val := []byte(e.Value)
 
-	operationBytes, keyBytes, valBytes := []byte(data.Operation), []byte(data.Key), []byte(data.Value)
+	total := 12 + len(op) + len(key) + len(val)
+	buf := make([]byte, total)
 
-	operationLen, keyLen, valLen := uint32(len(operationBytes)), uint32(len(keyBytes)), uint32(len(valBytes))
-	total := 12 + operationLen + keyLen + valLen
+	// write lengths
+	binary.LittleEndian.PutUint32(buf[0:4], uint32(len(op)))
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(len(key)))
+	binary.LittleEndian.PutUint32(buf[8:12], uint32(len(val)))
 
-	entry := make([]byte, total)
+	offset := 12
 
-	temp := make([]byte, 4)
+	copy(buf[offset:], op)
+	offset += len(op)
 
-	binary.LittleEndian.PutUint32(temp, operationLen)
-	entry = append(temp, operationBytes...)
-	binary.LittleEndian.PutUint32(temp, keyLen)
-	entry = append(temp, keyBytes...)
-	binary.LittleEndian.PutUint32(temp, valLen)
-	entry = append(temp, valBytes...)
+	copy(buf[offset:], key)
+	offset += len(key)
 
-	entry = append(entry, operationBytes...)
-	entry = append(entry, keyBytes...)
-	entry = append(entry, valBytes...)
+	copy(buf[offset:], val)
 
-	return entry
+	return buf
 }
-
 func decode(data []byte) (*LogEntry, error) {
 	offset := 0
 

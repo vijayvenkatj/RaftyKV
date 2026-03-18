@@ -58,6 +58,22 @@ func (s *Store) Apply(entry *wal.LogEntry) error {
 	return nil
 }
 
+func (s *Store) applyToMemory(entry *wal.LogEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch entry.Operation {
+	case "put":
+		s.data[entry.Key] = entry.Value
+	case "delete":
+		delete(s.data, entry.Key)
+	default:
+		return IllegalOperationErr
+	}
+
+	return nil
+}
+
 func (s *Store) Get(key string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -67,4 +83,20 @@ func (s *Store) Get(key string) (string, error) {
 		return "", DataDoesNotExistErr
 	}
 	return val, nil
+}
+
+func (s *Store) Restore() error {
+
+	entries, err := s.wal.Restore()
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		err := s.applyToMemory(entry)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
