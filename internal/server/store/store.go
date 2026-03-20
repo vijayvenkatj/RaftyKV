@@ -13,8 +13,8 @@ type Store struct {
 	wal  *wal.WAL
 }
 
-func New() *Store {
-	walInstance, err := wal.NewWAL("tmp/wal.txt")
+func New(filePath string) *Store {
+	walInstance, err := wal.NewWAL(filePath)
 	if err != nil {
 		panic(err)
 	}
@@ -32,7 +32,6 @@ var (
 
 func (s *Store) Apply(entry *wal.LogEntry) error {
 
-	// Add the log entry to WAL
 	err := s.wal.Append(entry)
 	if err != nil {
 		return err
@@ -87,7 +86,7 @@ func (s *Store) Get(key string) (string, error) {
 
 func (s *Store) Restore() error {
 
-	entries, err := s.wal.Restore()
+	entries, err := s.wal.ReadAll()
 	if err != nil {
 		return err
 	}
@@ -99,4 +98,8 @@ func (s *Store) Restore() error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) Close() error {
+	return s.wal.Close()
 }

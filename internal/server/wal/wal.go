@@ -31,17 +31,6 @@ func NewWAL(filePath string) (*WAL, error) {
 	}, nil
 }
 
-func Close(wal *WAL) error {
-	wal.mu.Lock()
-	defer wal.mu.Unlock()
-
-	if wal.file != nil {
-		return wal.file.Close()
-	}
-
-	return nil
-}
-
 func (wal *WAL) Append(entry *LogEntry) error {
 	wal.mu.Lock()
 	defer wal.mu.Unlock()
@@ -63,7 +52,7 @@ func (wal *WAL) Append(entry *LogEntry) error {
 	return nil
 }
 
-func (wal *WAL) Restore() ([]*LogEntry, error) {
+func (wal *WAL) ReadAll() ([]*LogEntry, error) {
 	wal.mu.Lock()
 	defer wal.mu.Unlock()
 
@@ -115,4 +104,15 @@ func (wal *WAL) Restore() ([]*LogEntry, error) {
 	}
 
 	return entries, nil
+}
+
+func (wal *WAL) Close() error {
+	wal.mu.Lock()
+	defer wal.mu.Unlock()
+
+	if wal.file != nil {
+		return wal.file.Close()
+	}
+
+	return nil
 }
