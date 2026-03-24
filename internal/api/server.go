@@ -13,15 +13,16 @@ type Server struct {
 }
 
 type Config struct {
-	Address string
-	NodeId  string
-	Peers   []string
-	Path    string
+	Address  string
+	NodeId   string
+	IsLeader bool
+	Peers    []string
+	Path     string
 }
 
 func NewServer(config Config) *Server {
 
-	storeInstance := store.New(config.Path)
+	storeInstance := store.New(config.Path, config.Peers, config.IsLeader)
 	handler := NewHandler(storeInstance, config)
 	router := NewRouter(handler)
 

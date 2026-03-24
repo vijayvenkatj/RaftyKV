@@ -9,16 +9,18 @@ import (
 )
 
 type Handler struct {
-	NodeID string
-	Peers  []string
-	Store  *store.Store
+	NodeID   string
+	Peers    []string
+	IsLeader bool
+	Store    *store.Store
 }
 
 func NewHandler(store *store.Store, config Config) *Handler {
 	return &Handler{
-		NodeID: config.NodeId,
-		Peers:  config.Peers,
-		Store:  store,
+		NodeID:   config.NodeId,
+		Peers:    config.Peers,
+		Store:    store,
+		IsLeader: config.IsLeader,
 	}
 }
 
@@ -50,6 +52,11 @@ func (handler *Handler) PutValueHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !handler.IsLeader {
+		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to put value"})
+		return
+	}
+
 	logEntry := &wal.LogEntry{
 		Operation: "put",
 		Key:       req.Key,
@@ -69,6 +76,11 @@ func (handler *Handler) DeleteValueHandler(w http.ResponseWriter, r *http.Reques
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		writeJSON(w, http.StatusBadRequest, Response{Error: "missing key"})
+		return
+	}
+
+	if !handler.IsLeader {
+		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to delete value"})
 		return
 	}
 

@@ -18,14 +18,19 @@ type Store struct {
 	data map[string]string
 
 	lastAppliedIndex uint32
-	lastSnapIndex    uint32
-	threshold        uint32
+	commitIndex      uint32
+
+	lastSnapIndex uint32
+	threshold     uint32
+
+	peers    []string
+	isLeader bool
 
 	wal  *wal.WAL
 	snap *wal.Snapshot
 }
 
-func New(filePath string) *Store {
+func New(filePath string, peers []string, isLeader bool) *Store {
 	walInstance, err := wal.NewWAL(filePath)
 	if err != nil {
 		panic(err)
@@ -40,6 +45,9 @@ func New(filePath string) *Store {
 		lastAppliedIndex: 0,
 		wal:              walInstance,
 		snap:             snapInstance,
+
+		isLeader: isLeader,
+		peers:    peers,
 	}
 
 	err = store.Restore()
@@ -60,6 +68,10 @@ func (s *Store) Apply(entry *wal.LogEntry) error {
 	if err != nil {
 		return err
 	}
+
+	// Send to Peers and check for ACKs
+
+	// If majority achieved -> go ahead
 
 	switch entry.Operation {
 	case "put":

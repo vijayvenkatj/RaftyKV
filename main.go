@@ -14,6 +14,7 @@ func main() {
 	var port = flag.String("port", "8080", "port to run server")
 	var path = flag.String("path", "./tmp", "path to store")
 	var peerData = flag.String("peers", "", "comma separated peer addresses")
+	var isLeader = flag.Bool("leader", false, "node type")
 	flag.Parse()
 
 	var peers []string
@@ -22,10 +23,11 @@ func main() {
 	}
 
 	config := api.Config{
-		NodeId:  *nodeId,
-		Address: fmt.Sprintf(":%s", *port),
-		Path:    *path,
-		Peers:   peers,
+		NodeId:   *nodeId,
+		IsLeader: *isLeader,
+		Address:  fmt.Sprintf(":%s", *port),
+		Path:     *path,
+		Peers:    peers,
 	}
 
 	server := api.NewServer(config)
