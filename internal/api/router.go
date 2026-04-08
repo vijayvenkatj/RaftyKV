@@ -10,6 +10,7 @@ func NewRouter(handler *Handler) *http.ServeMux {
 
 	router.Handle("/api/v1/", http.StripPrefix("/api/v1", RouterV1(handler)))
 	router.HandleFunc("POST /internal/replicate", handler.ReplicateHandler)
+	router.HandleFunc("POST /internal/vote", handler.VoteHandler)
 
 	return router
 }

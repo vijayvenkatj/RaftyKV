@@ -119,6 +119,8 @@ func New(config Config) *Store {
 		}
 	}
 
+	// TODO: fix follower selection logic
+
 	if store.state == Follower {
 		go store.runElectionTimer()
 	}
@@ -208,6 +210,10 @@ func (s *Store) Restore() error {
 	s.CommitIndex = s.LastApplied
 
 	return nil
+}
+
+func (s *Store) IsLeader() bool {
+	return s.state == Leader
 }
 
 func (s *Store) Close() error {

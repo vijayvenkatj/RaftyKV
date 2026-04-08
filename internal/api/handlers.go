@@ -52,7 +52,7 @@ func (handler *Handler) PutValueHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !handler.IsLeader {
+	if !handler.Store.IsLeader() {
 		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to put value"})
 		return
 	}
@@ -79,7 +79,7 @@ func (handler *Handler) DeleteValueHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !handler.IsLeader {
+	if !handler.Store.IsLeader() {
 		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to delete value"})
 		return
 	}
@@ -107,5 +107,16 @@ func (handler *Handler) ReplicateHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	resp := handler.Store.AppendEntries(request)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (handler *Handler) VoteHandler(w http.ResponseWriter, r *http.Request) {
+	var request store.RequestVoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSON(w, http.StatusBadRequest, store.RequestVoteResponse{VoteGranted: false})
+		return
+	}
+
+	resp := handler.Store.RequestVote(request)
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -1,8 +1,12 @@
 package store
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"time"
 
 	"github.com/vijayvenkatj/kv-store/internal/server/wal"
@@ -79,22 +83,150 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 	return AppendEntriesResponse{Success: true, Term: s.CurrentTerm}
 }
 
-func (s *Store) startElection() {
+// TODO: fix race cond
+type RequestVoteRequest struct {
+	Term        uint32 `json:"term"`
+	CandidateID uint32 `json:"candidate_id"`
+
+	LastLogIndex uint32 `json:"last_log_index"`
+	LastLogTerm  uint32 `json:"last_log_term"`
+}
+
+type RequestVoteResponse struct {
+	Term        uint32 `json:"term"`
+	VoteGranted bool   `json:"vote_granted"`
+}
+
+func (s *Store) RequestVote(req RequestVoteRequest) RequestVoteResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.CurrentTerm++
+	if req.Term < s.CurrentTerm {
+		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+	}
 
-	// Vote for itself
+	if !(s.VotedFor == uint32(0) || s.VotedFor == req.CandidateID) {
+		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+	}
+
+	if req.LastLogTerm > s.wal.LastIndex {
+		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}
+	}
+	if req.LastLogTerm == s.wal.CurrentTerm && req.LastLogIndex >= s.wal.LastIndex {
+		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}
+	}
+
+	return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+}
+
+func (s *Store) startElection() {
+
+	s.mu.Lock()
+
+	s.state = Candidate
+	s.CurrentTerm++
+	term := s.CurrentTerm
+
 	s.VotedFor = s.NodeID
 	votes := 1
 
-	log.Println(votes)
+	lastIndex, lastTerm := s.wal.LastIndex, s.wal.CurrentTerm
 
-	// RPC to other nodes to get the majority
+	s.mu.Unlock()
 
-	// reset timer if its right.
+	// Reset election timer
+	select {
+	case s.resetCh <- struct{}{}:
+	default:
+	}
 
+	for _, follower := range s.followers {
+		go func(f uint32) {
+			t, granted, err := s.sendVoteRequest(f, term, lastIndex, lastTerm)
+
+			s.mu.Lock()
+			defer s.mu.Unlock()
+
+			if s.state != Candidate || s.CurrentTerm != term {
+				return
+			}
+
+			if err != nil {
+				return
+			}
+
+			if t > s.CurrentTerm {
+				s.CurrentTerm = t
+				s.state = Follower
+				return
+			}
+
+			if granted {
+				votes++
+
+				if votes > len(s.followers)/2 {
+					s.state = Leader
+					log.Println("LEADER HAS BEEN CONFIRMED")
+					for _, f := range s.followers {
+						s.NextIndex[f] = s.wal.LastIndex + 1
+						s.MatchIndex[f] = 0
+					}
+
+					return
+				}
+			}
+		}(follower)
+	}
+}
+
+/*
+HELPER FUNCTIONS
+*/
+
+func (s *Store) sendVoteRequest(
+	follower uint32,
+	term uint32,
+	lastLogIndex uint32,
+	lastLogTerm uint32,
+) (uint32, bool, error) {
+
+	reqBody := RequestVoteRequest{
+		Term:         term,
+		CandidateID:  s.NodeID,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return 0, false, err
+	}
+
+	url := "http://" + s.followerMap[follower] + "/internal/vote"
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	if err != nil {
+		return 0, false, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return 0, false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, false, fmt.Errorf("bad status")
+	}
+
+	var res RequestVoteResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return 0, false, err
+	}
+
+	return res.Term, res.VoteGranted, nil
 }
 
 func (s *Store) runElectionTimer() {
@@ -104,7 +236,6 @@ func (s *Store) runElectionTimer() {
 	for {
 		select {
 		case <-timer.C:
-			// Start the election
 			s.startElection()
 			timer.Reset(s.randomTimeout())
 
