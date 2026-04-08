@@ -23,6 +23,8 @@ func (s *Store) AppendEntries(ctx context.Context, req *raft.AppendEntriesReques
 		s.becomeFollowerLocked(req.Term)
 	}
 
+	s.LeaderId = req.LeaderId
+
 	// reset election timer
 	select {
 	case s.resetCh <- struct{}{}:

@@ -44,7 +44,7 @@ type Store struct {
 
 	cond *sync.Cond
 
-	// LeaderId		uint32 -> TODO: add in the future
+	LeaderId    uint32
 	NodeID      uint32
 	CurrentTerm uint32
 	VotedFor    uint32
@@ -84,6 +84,7 @@ func New(config Config) *Store {
 		data: make(map[string]string),
 
 		NodeID:    config.NodeID,
+		LeaderId:  config.NodeID,
 		ElectionT: config.ElectionT,
 		resetCh:   make(chan struct{}),
 
@@ -262,6 +263,7 @@ func (s *Store) becomeLeaderLocked() {
 
 	log.Println("BECAME LEADER")
 	s.state = Leader
+	s.LeaderId = s.NodeID
 
 	last := s.wal.LastIndex
 	for _, f := range s.followers {

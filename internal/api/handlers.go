@@ -9,16 +9,18 @@ import (
 )
 
 type Handler struct {
-	NodeID   uint32
-	Peers    []uint32
-	Store    *store.Store
+	NodeID  uint32
+	Peers   []uint32
+	PeerMap map[uint32]string
+	Store   *store.Store
 }
 
 func NewHandler(store *store.Store, config Config) *Handler {
 	return &Handler{
-		NodeID:   config.NodeID,
-		Peers:    config.Peers,
-		Store:    store,
+		NodeID:  config.NodeID,
+		Peers:   config.Peers,
+		PeerMap: config.PeerMap,
+		Store:   store,
 	}
 }
 
@@ -51,7 +53,16 @@ func (handler *Handler) PutValueHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if !handler.Store.IsLeader() {
-		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to put value"})
+		leaderID := handler.Store.LeaderId
+
+		if leaderID == 0 {
+			writeJSON(w, 503, Response{Error: "leader unknown"})
+			return
+		}
+
+		url := "http://" + handler.PeerMap[leaderID] + "/api/v1/value"
+
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -78,7 +89,13 @@ func (handler *Handler) DeleteValueHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !handler.Store.IsLeader() {
-		writeJSON(w, http.StatusBadRequest, Response{Error: "follower is not allowed to delete value"})
+		leaderID := handler.Store.LeaderId
+		if leaderID == 0 {
+			writeJSON(w, 503, Response{Error: "leader unknown"})
+			return
+		}
+		url := "http://" + handler.PeerMap[leaderID] + "/api/v1/value"
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -96,5 +113,3 @@ func (handler *Handler) DeleteValueHandler(w http.ResponseWriter, r *http.Reques
 		Data: "deleted",
 	})
 }
-
-
