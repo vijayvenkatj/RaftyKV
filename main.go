@@ -17,7 +17,6 @@ func main() {
 	port := flag.String("port", "8080", "port to run server")
 	path := flag.String("path", "./tmp", "data directory")
 	peerData := flag.String("peers", "", "comma separated peers in form id=host:port")
-	isLeader := flag.Bool("leader", false, "start as leader (for testing only)")
 	flag.Parse()
 
 	// Parse peers
@@ -56,7 +55,6 @@ func main() {
 	// Build config
 	config := api.Config{
 		NodeID:    uint32(*nodeID),
-		IsLeader:  *isLeader, // only for local testing
 		Address:   fmt.Sprintf(":%s", *port),
 		Path:      fmt.Sprintf("%s/node-%d", *path, *nodeID),
 		ElectionT: 5 * time.Second,
@@ -69,7 +67,6 @@ func main() {
 
 	fmt.Printf("Node %d starting on %s\n", config.NodeID, config.Address)
 	fmt.Printf("Peers: %+v\n", config.PeerMap)
-	fmt.Printf("Leader: %v\n", config.IsLeader)
 
 	if err := server.ListenAndServe(); err != nil {
 		panic(err)

@@ -59,8 +59,7 @@ func (s *Store) replicateWorker(follower uint32) {
 		}
 
 		if term > s.CurrentTerm {
-			s.CurrentTerm = term
-			s.state = Follower
+			s.becomeLeaderLocked()
 			s.mu.Unlock()
 			return
 		}

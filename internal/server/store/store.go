@@ -14,7 +14,6 @@ type Config struct {
 	NodeID    uint32
 	Peers     []uint32
 	PeerMap   map[uint32]string
-	IsLeader  bool
 	Path      string
 	ElectionT time.Duration
 }
@@ -73,12 +72,7 @@ func New(config Config) *Store {
 		Timeout: 2 * time.Second,
 	}
 
-	var state InstanceType
-	if config.IsLeader {
-		state = Leader
-	} else {
-		state = Follower
-	}
+	var state InstanceType = Follower
 
 	store := &Store{
 		data: make(map[string]string),
@@ -114,17 +108,9 @@ func New(config Config) *Store {
 	lastLog := store.wal.LastIndex
 	for _, follower := range store.followers {
 		store.NextIndex[follower] = lastLog + 1
-		if store.state == Leader {
-			go store.replicateWorker(follower)
-		}
 	}
 
-	// TODO: fix follower selection logic
-
-	if store.state == Follower {
-		go store.runElectionTimer()
-	}
-
+	go store.runElectionTimer()
 	go store.ApplyLoop()
 
 	return store
@@ -214,6 +200,43 @@ func (s *Store) Restore() error {
 
 func (s *Store) IsLeader() bool {
 	return s.state == Leader
+}
+
+func (s *Store) becomeFollower(term uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.becomeFollowerLocked(term)
+}
+
+func (s *Store) becomeLeader() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.becomeLeaderLocked()
+}
+
+func (s *Store) becomeFollowerLocked(term uint32) {
+	if term < s.CurrentTerm {
+		return
+	}
+	s.state = Follower
+	s.CurrentTerm = term
+	s.VotedFor = 0
+}
+
+func (s *Store) becomeLeaderLocked() {
+	if s.state == Leader {
+		return
+	}
+
+	log.Println("BECAME LEADER")
+	s.state = Leader
+
+	last := s.wal.LastIndex
+	for _, f := range s.followers {
+		s.NextIndex[f] = last + 1
+		s.MatchIndex[f] = 0
+		go s.replicateWorker(f)
+	}
 }
 
 func (s *Store) Close() error {

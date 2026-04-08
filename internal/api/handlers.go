@@ -11,7 +11,6 @@ import (
 type Handler struct {
 	NodeID   uint32
 	Peers    []uint32
-	IsLeader bool
 	Store    *store.Store
 }
 
@@ -20,7 +19,6 @@ func NewHandler(store *store.Store, config Config) *Handler {
 		NodeID:   config.NodeID,
 		Peers:    config.Peers,
 		Store:    store,
-		IsLeader: config.IsLeader,
 	}
 }
 

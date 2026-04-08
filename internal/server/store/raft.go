@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"time"
@@ -29,33 +28,34 @@ type AppendEntriesResponse struct {
 	Success bool   `json:"success"`
 }
 
+/*
+AppendEntries truncates deviant data and replaces them with the leaders log. ( source of truth )
+*/
 func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if req.Term < s.CurrentTerm {
+		return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+	} else if req.Term > s.CurrentTerm {
+		s.becomeFollowerLocked(req.Term)
+	}
+
+	// reset election timer
 	select {
 	case s.resetCh <- struct{}{}:
 	default:
 	}
 
-	// Term check
-	if req.Term < s.CurrentTerm {
-		return AppendEntriesResponse{Success: false}
-	}
-	if s.CurrentTerm < req.Term {
-		s.state = Follower
-		s.CurrentTerm = req.Term
-	}
-
-	// Check prev log
+	// log consistency check
 	if req.PrevLogIndex > 0 {
 		entry, err := s.wal.Get(req.PrevLogIndex)
 		if err != nil || entry.Term != req.PrevLogTerm {
-			return AppendEntriesResponse{Success: false}
+			return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
 		}
 	}
 
-	// Conflict resolution + append
+	// truncate and overwrite
 	for i, newEntry := range req.Entries {
 		idx := req.PrevLogIndex + 1 + uint32(i)
 
@@ -66,6 +66,9 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 				if err := s.wal.TruncateFrom(idx); err != nil {
 					return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
 				}
+				if err := s.wal.Append(newEntry); err != nil {
+					return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+				}
 			}
 		} else {
 			if err := s.wal.Append(newEntry); err != nil {
@@ -74,16 +77,15 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 		}
 	}
 
-	// Commit update
+	// commit update
 	if req.LeaderCommit > s.CommitIndex {
 		s.CommitIndex = min(req.LeaderCommit, s.wal.LastIndex)
 		s.cond.Broadcast()
 	}
 
-	return AppendEntriesResponse{Success: true, Term: s.CurrentTerm}
+	return AppendEntriesResponse{Term: s.CurrentTerm, Success: true}
 }
 
-// TODO: fix race cond
 type RequestVoteRequest struct {
 	Term        uint32 `json:"term"`
 	CandidateID uint32 `json:"candidate_id"`
@@ -97,30 +99,56 @@ type RequestVoteResponse struct {
 	VoteGranted bool   `json:"vote_granted"`
 }
 
+/*
+RequestVote returns a vote if the candidate is at-least as updated as the follower.
+*/
 func (s *Store) RequestVote(req RequestVoteRequest) RequestVoteResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if req.Term < s.CurrentTerm {
 		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+	} else if req.Term > s.CurrentTerm {
+		s.becomeFollowerLocked(req.Term)
 	}
 
-	if !(s.VotedFor == uint32(0) || s.VotedFor == req.CandidateID) {
+	if s.VotedFor != 0 && s.VotedFor != req.CandidateID {
 		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
 	}
 
-	if req.LastLogTerm > s.wal.LastIndex {
-		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}
+	lastIndex := s.wal.LastIndex
+	lastTerm := uint32(0)
+
+	if lastIndex > 0 {
+		entry, _ := s.wal.Get(lastIndex)
+		lastTerm = entry.Term
 	}
-	if req.LastLogTerm == s.wal.CurrentTerm && req.LastLogIndex >= s.wal.LastIndex {
+
+	if req.LastLogTerm > lastTerm ||
+		(req.LastLogTerm == lastTerm && req.LastLogIndex >= lastIndex) {
+
+		s.VotedFor = req.CandidateID
+
+		// reset timer on vote
+		select {
+		case s.resetCh <- struct{}{}:
+		default:
+		}
+
 		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}
 	}
 
 	return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
 }
 
-func (s *Store) startElection() {
+/*
+HELPER FUNCTIONS
+*/
 
+/*
+startElection makes the current follower a Candidate, votes itself and asks others for their vote. If it reaches majority, then It becomes the leader.
+*/
+func (s *Store) startElection() {
 	s.mu.Lock()
 
 	s.state = Candidate
@@ -130,11 +158,17 @@ func (s *Store) startElection() {
 	s.VotedFor = s.NodeID
 	votes := 1
 
-	lastIndex, lastTerm := s.wal.LastIndex, s.wal.CurrentTerm
+	lastIndex := s.wal.LastIndex
+	lastTerm := uint32(0)
+
+	if lastIndex > 0 {
+		entry, _ := s.wal.Get(lastIndex)
+		lastTerm = entry.Term
+	}
 
 	s.mu.Unlock()
 
-	// Reset election timer
+	// reset timer
 	select {
 	case s.resetCh <- struct{}{}:
 	default:
@@ -156,22 +190,14 @@ func (s *Store) startElection() {
 			}
 
 			if t > s.CurrentTerm {
-				s.CurrentTerm = t
-				s.state = Follower
+				s.becomeFollowerLocked(t)
 				return
 			}
 
 			if granted {
 				votes++
-
 				if votes > len(s.followers)/2 {
-					s.state = Leader
-					log.Println("LEADER HAS BEEN CONFIRMED")
-					for _, f := range s.followers {
-						s.NextIndex[f] = s.wal.LastIndex + 1
-						s.MatchIndex[f] = 0
-					}
-
+					s.becomeLeaderLocked()
 					return
 				}
 			}
@@ -179,16 +205,7 @@ func (s *Store) startElection() {
 	}
 }
 
-/*
-HELPER FUNCTIONS
-*/
-
-func (s *Store) sendVoteRequest(
-	follower uint32,
-	term uint32,
-	lastLogIndex uint32,
-	lastLogTerm uint32,
-) (uint32, bool, error) {
+func (s *Store) sendVoteRequest(follower uint32, term uint32, lastLogIndex uint32, lastLogTerm uint32) (uint32, bool, error) {
 
 	reqBody := RequestVoteRequest{
 		Term:         term,
@@ -229,6 +246,9 @@ func (s *Store) sendVoteRequest(
 	return res.Term, res.VoteGranted, nil
 }
 
+/*
+runElectionTimer checks if the leader is being responsive. If the leader goes down (timer is not reset),then it calls for an election.
+*/
 func (s *Store) runElectionTimer() {
 	timer := time.NewTimer(s.randomTimeout())
 	defer timer.Stop()
@@ -236,7 +256,14 @@ func (s *Store) runElectionTimer() {
 	for {
 		select {
 		case <-timer.C:
-			s.startElection()
+			s.mu.RLock()
+			isLeader := s.state == Leader
+			s.mu.RUnlock()
+
+			if !isLeader {
+				s.startElection()
+			}
+
 			timer.Reset(s.randomTimeout())
 
 		case <-s.resetCh:

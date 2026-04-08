@@ -15,7 +15,6 @@ type Server struct {
 
 type Config struct {
 	Address   string
-	IsLeader  bool
 	ElectionT time.Duration
 
 	NodeID  uint32
@@ -32,7 +31,6 @@ func NewServer(config Config) *Server {
 		ElectionT: config.ElectionT,
 		Peers:     config.Peers,
 		PeerMap:   config.PeerMap,
-		IsLeader:  config.IsLeader,
 		Path:      config.Path,
 	}
 
