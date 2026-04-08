@@ -1,42 +1,24 @@
 package store
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"time"
 
+	"github.com/vijayvenkatj/kv-store/internal/proto/raft"
 	"github.com/vijayvenkatj/kv-store/internal/server/wal"
 )
-
-type AppendEntriesRequest struct {
-	Term     uint32 `json:"term"`
-	LeaderId uint32 `json:"leader_id"`
-
-	PrevLogIndex uint32 `json:"prev_log_index"`
-	PrevLogTerm  uint32 `json:"prev_log_term"`
-
-	Entries []*wal.LogEntry `json:"entries"`
-
-	LeaderCommit uint32 `json:"leader_commit"`
-}
-
-type AppendEntriesResponse struct {
-	Term    uint32 `json:"term"`
-	Success bool   `json:"success"`
-}
 
 /*
 AppendEntries truncates deviant data and replaces them with the leaders log. ( source of truth )
 */
-func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
+func (s *Store) AppendEntries(ctx context.Context, req *raft.AppendEntriesRequest) (*raft.AppendEntriesResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if req.Term < s.CurrentTerm {
-		return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+		return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: false}, nil
 	} else if req.Term > s.CurrentTerm {
 		s.becomeFollowerLocked(req.Term)
 	}
@@ -51,12 +33,19 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 	if req.PrevLogIndex > 0 {
 		entry, err := s.wal.Get(req.PrevLogIndex)
 		if err != nil || entry.Term != req.PrevLogTerm {
-			return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+			return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: false}, nil
 		}
 	}
 
 	// truncate and overwrite
-	for i, newEntry := range req.Entries {
+	for i, newEntryProto := range req.Entries {
+		newEntry := &wal.LogEntry{
+			Term:      newEntryProto.Term,
+			LogIndex:  newEntryProto.LogIndex,
+			Operation: newEntryProto.Operation,
+			Key:       newEntryProto.Key,
+			Value:     newEntryProto.Value,
+		}
 		idx := req.PrevLogIndex + 1 + uint32(i)
 
 		existing, err := s.wal.Get(idx)
@@ -64,15 +53,15 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 		if err == nil {
 			if existing.Term != newEntry.Term {
 				if err := s.wal.TruncateFrom(idx); err != nil {
-					return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+					return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: false}, nil
 				}
 				if err := s.wal.Append(newEntry); err != nil {
-					return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+					return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: false}, nil
 				}
 			}
 		} else {
 			if err := s.wal.Append(newEntry); err != nil {
-				return AppendEntriesResponse{Term: s.CurrentTerm, Success: false}
+				return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: false}, nil
 			}
 		}
 	}
@@ -83,37 +72,24 @@ func (s *Store) AppendEntries(req AppendEntriesRequest) AppendEntriesResponse {
 		s.cond.Broadcast()
 	}
 
-	return AppendEntriesResponse{Term: s.CurrentTerm, Success: true}
-}
-
-type RequestVoteRequest struct {
-	Term        uint32 `json:"term"`
-	CandidateID uint32 `json:"candidate_id"`
-
-	LastLogIndex uint32 `json:"last_log_index"`
-	LastLogTerm  uint32 `json:"last_log_term"`
-}
-
-type RequestVoteResponse struct {
-	Term        uint32 `json:"term"`
-	VoteGranted bool   `json:"vote_granted"`
+	return &raft.AppendEntriesResponse{Term: s.CurrentTerm, Success: true}, nil
 }
 
 /*
 RequestVote returns a vote if the candidate is at-least as updated as the follower.
 */
-func (s *Store) RequestVote(req RequestVoteRequest) RequestVoteResponse {
+func (s *Store) RequestVote(ctx context.Context, req *raft.RequestVoteRequest) (*raft.RequestVoteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if req.Term < s.CurrentTerm {
-		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+		return &raft.RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}, nil
 	} else if req.Term > s.CurrentTerm {
 		s.becomeFollowerLocked(req.Term)
 	}
 
-	if s.VotedFor != 0 && s.VotedFor != req.CandidateID {
-		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+	if s.VotedFor != 0 && s.VotedFor != req.CandidateId {
+		return &raft.RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}, nil
 	}
 
 	lastIndex := s.wal.LastIndex
@@ -127,7 +103,7 @@ func (s *Store) RequestVote(req RequestVoteRequest) RequestVoteResponse {
 	if req.LastLogTerm > lastTerm ||
 		(req.LastLogTerm == lastTerm && req.LastLogIndex >= lastIndex) {
 
-		s.VotedFor = req.CandidateID
+		s.VotedFor = req.CandidateId
 
 		// reset timer on vote
 		select {
@@ -135,10 +111,10 @@ func (s *Store) RequestVote(req RequestVoteRequest) RequestVoteResponse {
 		default:
 		}
 
-		return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}
+		return &raft.RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: true}, nil
 	}
 
-	return RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}
+	return &raft.RequestVoteResponse{Term: s.CurrentTerm, VoteGranted: false}, nil
 }
 
 /*
@@ -207,39 +183,23 @@ func (s *Store) startElection() {
 
 func (s *Store) sendVoteRequest(follower uint32, term uint32, lastLogIndex uint32, lastLogTerm uint32) (uint32, bool, error) {
 
-	reqBody := RequestVoteRequest{
+	client, ok := s.grpcClients[follower]
+	if !ok {
+		return 0, false, fmt.Errorf("no grpc client for follower %d", follower)
+	}
+
+	req := &raft.RequestVoteRequest{
 		Term:         term,
-		CandidateID:  s.NodeID,
+		CandidateId:  s.NodeID,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  lastLogTerm,
 	}
 
-	data, err := json.Marshal(reqBody)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, err := client.RequestVote(ctx, req)
 	if err != nil {
-		return 0, false, err
-	}
-
-	url := "http://" + s.followerMap[follower] + "/internal/vote"
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
-	if err != nil {
-		return 0, false, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return 0, false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, false, fmt.Errorf("bad status")
-	}
-
-	var res RequestVoteResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return 0, false, err
 	}
 

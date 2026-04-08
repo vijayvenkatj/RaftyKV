@@ -97,24 +97,4 @@ func (handler *Handler) DeleteValueHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (handler *Handler) ReplicateHandler(w http.ResponseWriter, r *http.Request) {
-	var request store.AppendEntriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, store.AppendEntriesResponse{Success: false})
-		return
-	}
 
-	resp := handler.Store.AppendEntries(request)
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (handler *Handler) VoteHandler(w http.ResponseWriter, r *http.Request) {
-	var request store.RequestVoteRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, store.RequestVoteResponse{VoteGranted: false})
-		return
-	}
-
-	resp := handler.Store.RequestVote(request)
-	writeJSON(w, http.StatusOK, resp)
-}

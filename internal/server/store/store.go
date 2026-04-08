@@ -2,20 +2,27 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"log"
-	"net/http"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/vijayvenkatj/kv-store/internal/proto/raft"
 	"github.com/vijayvenkatj/kv-store/internal/server/wal"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Config struct {
-	NodeID    uint32
-	Peers     []uint32
-	PeerMap   map[uint32]string
-	Path      string
-	ElectionT time.Duration
+	NodeID      uint32
+	Peers       []uint32
+	PeerMap     map[uint32]string
+	Path        string
+	ElectionT   time.Duration
+	GrpcAddress string
 }
 
 var (
@@ -48,8 +55,10 @@ type Store struct {
 	LastApplied uint32
 	CommitIndex uint32
 
+	raft.UnimplementedRaftServiceServer
+
 	followers   []uint32
-	followerMap map[uint32]string
+	grpcClients map[uint32]raft.RaftServiceClient
 	state       InstanceType
 
 	NextIndex  map[uint32]uint32
@@ -58,7 +67,7 @@ type Store struct {
 	wal  *wal.WAL
 	snap *wal.Snapshot
 
-	httpClient *http.Client
+	grpcServer *grpc.Server
 }
 
 func New(config Config) *Store {
@@ -68,11 +77,8 @@ func New(config Config) *Store {
 	}
 
 	snapInstance := wal.NewSnapshot(config.Path)
-	var httpClient = &http.Client{
-		Timeout: 2 * time.Second,
-	}
 
-	var state InstanceType = Follower
+	state := Follower
 
 	store := &Store{
 		data: make(map[string]string),
@@ -85,7 +91,7 @@ func New(config Config) *Store {
 		CommitIndex: 0,
 
 		followers:   config.Peers,
-		followerMap: make(map[uint32]string),
+		grpcClients: make(map[uint32]raft.RaftServiceClient),
 		state:       state,
 
 		NextIndex:  make(map[uint32]uint32),
@@ -93,12 +99,24 @@ func New(config Config) *Store {
 
 		wal:  walInstance,
 		snap: snapInstance,
-
-		httpClient: httpClient,
 	}
 
 	store.cond = sync.NewCond(&store.mu)
-	store.followerMap = config.PeerMap
+
+	// Set up gRPC connections to peers
+	for id, addr := range config.PeerMap {
+		parts := strings.Split(addr, ":")
+		host := parts[0]
+		port, _ := strconv.Atoi(parts[1])
+		grpcAddr := fmt.Sprintf("%s:%d", host, port+10000)
+
+		conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Printf("Failed to dial peer %d: %v", id, err)
+			continue
+		}
+		store.grpcClients[id] = raft.NewRaftServiceClient(conn)
+	}
 
 	err = store.Restore()
 	if err != nil {
@@ -109,6 +127,20 @@ func New(config Config) *Store {
 	for _, follower := range store.followers {
 		store.NextIndex[follower] = lastLog + 1
 	}
+
+	store.grpcServer = grpc.NewServer()
+	raft.RegisterRaftServiceServer(store.grpcServer, store)
+
+	lis, err := net.Listen("tcp", config.GrpcAddress)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to start gRPC listener: %v", err))
+	}
+
+	go func() {
+		if err := store.grpcServer.Serve(lis); err != nil {
+			log.Fatalf("Failed to serve gRPC: %v", err)
+		}
+	}()
 
 	go store.runElectionTimer()
 	go store.ApplyLoop()
