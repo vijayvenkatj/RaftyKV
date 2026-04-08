@@ -52,10 +52,14 @@ func main() {
 		panic("peer list should not include self node")
 	}
 
+	portInt, _ := strconv.Atoi(*port)
+	grpcPort := portInt + 10000
+
 	// Build config
 	config := api.Config{
 		NodeID:    uint32(*nodeID),
 		Address:   fmt.Sprintf(":%s", *port),
+		GrpcAddress: fmt.Sprintf(":%d", grpcPort),
 		Path:      fmt.Sprintf("%s/node-%d", *path, *nodeID),
 		ElectionT: 5 * time.Second,
 		Peers:     peers,

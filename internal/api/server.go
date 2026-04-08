@@ -15,6 +15,7 @@ type Server struct {
 
 type Config struct {
 	Address   string
+	GrpcAddress string
 	ElectionT time.Duration
 
 	NodeID  uint32
@@ -32,6 +33,7 @@ func NewServer(config Config) *Server {
 		Peers:     config.Peers,
 		PeerMap:   config.PeerMap,
 		Path:      config.Path,
+		GrpcAddress: config.GrpcAddress,
 	}
 
 	storeInstance := store.New(storeConfig)

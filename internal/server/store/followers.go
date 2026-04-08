@@ -1,14 +1,14 @@
 package store
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
+	"context"
 	"log"
 	"math/rand"
-	"net/http"
 	"time"
 
+	"fmt"
+
+	"github.com/vijayvenkatj/kv-store/internal/proto/raft"
 	"github.com/vijayvenkatj/kv-store/internal/server/wal"
 )
 
@@ -105,41 +105,36 @@ sendReplication sends a HTTP request for AppendEntries RPC to the specified foll
 */
 func (s *Store) sendReplication(logs []*wal.LogEntry, leaderCommit, follower, prevLogIdx, prevLogTerm uint32) (uint32, bool, error) {
 
-	reqBody := AppendEntriesRequest{
+	client, ok := s.grpcClients[follower]
+	if !ok {
+		return 0, false, fmt.Errorf("no grpc client for follower %d", follower)
+	}
+
+	var protoEntries []*raft.LogEntry
+	for _, l := range logs {
+		protoEntries = append(protoEntries, &raft.LogEntry{
+			Term:      l.Term,
+			LogIndex:  l.LogIndex,
+			Operation: l.Operation,
+			Key:       l.Key,
+			Value:     l.Value,
+		})
+	}
+
+	req := &raft.AppendEntriesRequest{
 		LeaderId:     s.NodeID,
 		Term:         s.CurrentTerm,
 		PrevLogIndex: prevLogIdx,
 		PrevLogTerm:  prevLogTerm,
-		Entries:      logs,
+		Entries:      protoEntries,
 		LeaderCommit: leaderCommit,
 	}
 
-	data, err := json.Marshal(reqBody)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, err := client.AppendEntries(ctx, req)
 	if err != nil {
-		return 0, false, err
-	}
-
-	url := "http://" + s.followerMap[follower] + "/internal/replicate"
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
-	if err != nil {
-		return 0, false, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return 0, false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, false, fmt.Errorf("bad status")
-	}
-
-	var res AppendEntriesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return 0, false, err
 	}
 
