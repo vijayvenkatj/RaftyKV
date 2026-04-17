@@ -128,6 +128,7 @@ func (s *Store) sendReplication(logs []*wal.LogEntry, leaderCommit, follower, pr
 		PrevLogTerm:  prevLogTerm,
 		Entries:      protoEntries,
 		LeaderCommit: leaderCommit,
+		ShardId:      s.ShardID,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

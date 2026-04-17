@@ -64,12 +64,12 @@ func NewShardManager(shardList map[uint32][]Location, localAddr string, config C
 		}
 
 		storeConfig := store.Config{
-			NodeID:      config.NodeID,
-			ElectionT:   config.ElectionT,
-			Peers:       peers,
-			PeerMap:     peerMap,
-			Path:        fmt.Sprintf("%s/shard-%d", config.Path, shardID),
-			GrpcAddress: config.GrpcAddress,
+			NodeID:    config.NodeID,
+			ShardID:   shardID,
+			ElectionT: config.ElectionT,
+			Peers:     peers,
+			PeerMap:   peerMap,
+			Path:      fmt.Sprintf("%s/shard-%d", config.Path, shardID),
 		}
 		shardStore := store.New(storeConfig)
 		localShards[shardID] = shardStore

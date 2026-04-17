@@ -105,6 +105,7 @@ type AppendEntriesRequest struct {
 	PrevLogTerm   uint32                 `protobuf:"varint,4,opt,name=prevLogTerm,proto3" json:"prevLogTerm,omitempty"`
 	Entries       []*LogEntry            `protobuf:"bytes,5,rep,name=entries,proto3" json:"entries,omitempty"`
 	LeaderCommit  uint32                 `protobuf:"varint,6,opt,name=leaderCommit,proto3" json:"leaderCommit,omitempty"`
+	ShardId       uint32                 `protobuf:"varint,7,opt,name=shardId,proto3" json:"shardId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -181,6 +182,13 @@ func (x *AppendEntriesRequest) GetLeaderCommit() uint32 {
 	return 0
 }
 
+func (x *AppendEntriesRequest) GetShardId() uint32 {
+	if x != nil {
+		return x.ShardId
+	}
+	return 0
+}
+
 type AppendEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Term          uint32                 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
@@ -239,6 +247,7 @@ type RequestVoteRequest struct {
 	CandidateId   uint32                 `protobuf:"varint,2,opt,name=candidateId,proto3" json:"candidateId,omitempty"`
 	LastLogIndex  uint32                 `protobuf:"varint,3,opt,name=lastLogIndex,proto3" json:"lastLogIndex,omitempty"`
 	LastLogTerm   uint32                 `protobuf:"varint,4,opt,name=lastLogTerm,proto3" json:"lastLogTerm,omitempty"`
+	ShardId       uint32                 `protobuf:"varint,5,opt,name=shardId,proto3" json:"shardId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -297,6 +306,13 @@ func (x *RequestVoteRequest) GetLastLogIndex() uint32 {
 func (x *RequestVoteRequest) GetLastLogTerm() uint32 {
 	if x != nil {
 		return x.LastLogTerm
+	}
+	return 0
+}
+
+func (x *RequestVoteRequest) GetShardId() uint32 {
+	if x != nil {
+		return x.ShardId
 	}
 	return 0
 }
@@ -363,22 +379,24 @@ const file_internal_proto_raft_raft_proto_rawDesc = "" +
 	"\blogIndex\x18\x02 \x01(\rR\blogIndex\x12\x1c\n" +
 	"\toperation\x18\x03 \x01(\tR\toperation\x12\x10\n" +
 	"\x03key\x18\x04 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x05 \x01(\tR\x05value\"\xda\x01\n" +
+	"\x05value\x18\x05 \x01(\tR\x05value\"\xf4\x01\n" +
 	"\x14AppendEntriesRequest\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\rR\x04term\x12\x1a\n" +
 	"\bleaderId\x18\x02 \x01(\rR\bleaderId\x12\"\n" +
 	"\fprevLogIndex\x18\x03 \x01(\rR\fprevLogIndex\x12 \n" +
 	"\vprevLogTerm\x18\x04 \x01(\rR\vprevLogTerm\x12(\n" +
 	"\aentries\x18\x05 \x03(\v2\x0e.raft.LogEntryR\aentries\x12\"\n" +
-	"\fleaderCommit\x18\x06 \x01(\rR\fleaderCommit\"E\n" +
+	"\fleaderCommit\x18\x06 \x01(\rR\fleaderCommit\x12\x18\n" +
+	"\ashardId\x18\a \x01(\rR\ashardId\"E\n" +
 	"\x15AppendEntriesResponse\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\rR\x04term\x12\x18\n" +
-	"\asuccess\x18\x02 \x01(\bR\asuccess\"\x90\x01\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\"\xaa\x01\n" +
 	"\x12RequestVoteRequest\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\rR\x04term\x12 \n" +
 	"\vcandidateId\x18\x02 \x01(\rR\vcandidateId\x12\"\n" +
 	"\flastLogIndex\x18\x03 \x01(\rR\flastLogIndex\x12 \n" +
-	"\vlastLogTerm\x18\x04 \x01(\rR\vlastLogTerm\"K\n" +
+	"\vlastLogTerm\x18\x04 \x01(\rR\vlastLogTerm\x12\x18\n" +
+	"\ashardId\x18\x05 \x01(\rR\ashardId\"K\n" +
 	"\x13RequestVoteResponse\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\rR\x04term\x12 \n" +
 	"\vvoteGranted\x18\x02 \x01(\bR\vvoteGranted2\x9f\x01\n" +

@@ -23,6 +23,7 @@ message AppendEntriesRequest {
   uint32 prevLogTerm = 4;
   repeated LogEntry entries = 5;
   uint32 leaderCommit = 6;
+  uint32 shardId = 7;
 }
 
 message AppendEntriesResponse {
@@ -35,6 +36,7 @@ message RequestVoteRequest {
   uint32 candidateId = 2;
   uint32 lastLogIndex = 3;
   uint32 lastLogTerm = 4;
+  uint32 shardId = 5;
 }
 
 message RequestVoteResponse {

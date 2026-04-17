@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,12 +16,12 @@ import (
 )
 
 type Config struct {
-	NodeID      uint32
-	Peers       []uint32
-	PeerMap     map[uint32]string
-	Path        string
-	ElectionT   time.Duration
-	GrpcAddress string
+	NodeID    uint32
+	ShardID   uint32
+	Peers     []uint32
+	PeerMap   map[uint32]string
+	Path      string
+	ElectionT time.Duration
 }
 
 var (
@@ -46,6 +45,7 @@ type Store struct {
 
 	LeaderId    uint32
 	NodeID      uint32
+	ShardID     uint32
 	CurrentTerm uint32
 	VotedFor    uint32
 
@@ -54,8 +54,6 @@ type Store struct {
 
 	LastApplied uint32
 	CommitIndex uint32
-
-	raft.UnimplementedRaftServiceServer
 
 	followers   []uint32
 	grpcClients map[uint32]raft.RaftServiceClient
@@ -66,8 +64,6 @@ type Store struct {
 
 	wal  *wal.WAL
 	snap *wal.Snapshot
-
-	grpcServer *grpc.Server
 }
 
 func New(config Config) *Store {
@@ -84,6 +80,7 @@ func New(config Config) *Store {
 		data: make(map[string]string),
 
 		NodeID:    config.NodeID,
+		ShardID:   config.ShardID,
 		LeaderId:  config.NodeID,
 		ElectionT: config.ElectionT,
 		resetCh:   make(chan struct{}),
@@ -128,20 +125,6 @@ func New(config Config) *Store {
 	for _, follower := range store.followers {
 		store.NextIndex[follower] = lastLog + 1
 	}
-
-	store.grpcServer = grpc.NewServer()
-	raft.RegisterRaftServiceServer(store.grpcServer, store)
-
-	lis, err := net.Listen("tcp", config.GrpcAddress)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to start gRPC listener: %v", err))
-	}
-
-	go func() {
-		if err := store.grpcServer.Serve(lis); err != nil {
-			log.Fatalf("Failed to serve gRPC: %v", err)
-		}
-	}()
 
 	go store.runElectionTimer()
 	go store.ApplyLoop()

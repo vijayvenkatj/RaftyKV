@@ -53,7 +53,7 @@ func main() {
 		GrpcAddress: fmt.Sprintf(":%d", grpcPort),
 		Path:        fmt.Sprintf("%s/node-%d", *path, *nodeID),
 		ElectionT:   5 * time.Second,
-		
+
 		ShardList: shardList,
 	}
 

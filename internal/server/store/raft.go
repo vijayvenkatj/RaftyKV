@@ -13,7 +13,7 @@ import (
 /*
 AppendEntries truncates deviant data and replaces them with the leaders log. ( source of truth )
 */
-func (s *Store) AppendEntries(ctx context.Context, req *raft.AppendEntriesRequest) (*raft.AppendEntriesResponse, error) {
+func (s *Store) HandleAppendEntries(ctx context.Context, req *raft.AppendEntriesRequest) (*raft.AppendEntriesResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -80,7 +80,7 @@ func (s *Store) AppendEntries(ctx context.Context, req *raft.AppendEntriesReques
 /*
 RequestVote returns a vote if the candidate is at-least as updated as the follower.
 */
-func (s *Store) RequestVote(ctx context.Context, req *raft.RequestVoteRequest) (*raft.RequestVoteResponse, error) {
+func (s *Store) HandleRequestVote(ctx context.Context, req *raft.RequestVoteRequest) (*raft.RequestVoteResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -195,6 +195,7 @@ func (s *Store) sendVoteRequest(follower uint32, term uint32, lastLogIndex uint3
 		CandidateId:  s.NodeID,
 		LastLogIndex: lastLogIndex,
 		LastLogTerm:  lastLogTerm,
+		ShardId:      s.ShardID,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
